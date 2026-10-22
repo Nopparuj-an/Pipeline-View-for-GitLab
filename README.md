@@ -8,7 +8,7 @@ A live terminal dashboard for the **latest pipeline of every project in a GitLab
 </p>
 <p align="center"><sub>Default layout (left) and <code>--compact</code> (right)</sub></p>
 
-- **Single file, standard library only.** No dependencies, just Go.
+- **Standard library only.** No dependencies, just Go. Runs on Linux, macOS and Windows.
 - **Live.** Polls every 2s while anything is running and every 10s when everything is idle.
 - **Per-stage job boxes** coloured by status, with durations and commit info.
 - **Clickable.** Project, branch, pipeline, commit and job names are terminal hyperlinks (OSC 8).
@@ -23,8 +23,10 @@ Requires Go 1.22+.
 ```sh
 git clone <this repo>
 cd pipeline
-go build -o pipeline .
+go build -o pipeline .        # Windows: go build -o pipeline.exe .
 ```
+
+On Windows, run it in Windows Terminal or a recent console host (Windows 10+). Raw mode needs a real console, so Git Bash/mintty falls back to `--once` output.
 
 Or run straight from source with `go run .`.
 
