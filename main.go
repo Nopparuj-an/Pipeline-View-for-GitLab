@@ -28,7 +28,6 @@ import (
 	"syscall"
 	"time"
 	"unicode"
-	"unsafe"
 )
 
 const (
@@ -513,11 +512,13 @@ func (m *model) open() {
 	if e.pipeline != nil {
 		target = e.pipeline.WebURL
 	}
-	opener := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		opener = "open"
+	cmd := exec.Command("xdg-open", target)
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", target)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
 	}
-	cmd := exec.Command(opener, target)
 	if err := cmd.Start(); err != nil {
 		m.setFlash("open failed: " + err.Error())
 		return
@@ -1135,34 +1136,6 @@ func isTerminal(f *os.File) bool {
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
 }
 
-func termSize() (int, int) {
-	var ws struct{ Row, Col, X, Y uint16 }
-	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdout.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&ws)))
-	if errno != 0 || ws.Col == 0 || ws.Row == 0 {
-		return 100, 30
-	}
-	return int(ws.Col), int(ws.Row)
-}
-
-func stty(args ...string) (string, error) {
-	cmd := exec.Command("stty", args...)
-	cmd.Stdin = os.Stdin
-	out, err := cmd.Output()
-	return strings.TrimSpace(string(out)), err
-}
-
-// rawMode switches the terminal to unbuffered, no-echo input and returns a restore func.
-func rawMode() (func(), error) {
-	saved, err := stty("-g")
-	if err != nil {
-		return nil, fmt.Errorf("stty: %w", err)
-	}
-	if _, err := stty("-icanon", "-echo", "min", "1", "time", "0"); err != nil {
-		return nil, fmt.Errorf("stty: %w", err)
-	}
-	return func() { stty(saved) }, nil
-}
-
 func readKeys(ch chan<- string) {
 	buf := make([]byte, 64)
 	for {
@@ -1247,8 +1220,6 @@ func run(m *model) int {
 	go readKeys(keys)
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	winch := make(chan os.Signal, 1)
-	signal.Notify(winch, syscall.SIGWINCH)
 	results := make(chan fetchResult, 1)
 	timer := time.NewTimer(time.Hour)
 	timer.Stop()
@@ -1313,13 +1284,15 @@ func run(m *model) int {
 			}
 		case <-timer.C:
 			start(false)
-		case <-winch:
-			m.w, m.h = termSize()
-			os.Stdout.WriteString("\x1b[2J")
-			last = ""
 		case <-sigs:
 			return 0
 		case <-tick.C:
+			// polled rather than SIGWINCH, which Windows doesn't have
+			if w, h := termSize(); w != m.w || h != m.h {
+				m.w, m.h = w, h
+				os.Stdout.WriteString("\x1b[2J")
+				last = ""
+			}
 		}
 		if f := m.frame(time.Now()); f != last {
 			os.Stdout.WriteString(f)
