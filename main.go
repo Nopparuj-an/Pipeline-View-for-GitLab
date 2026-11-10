@@ -1058,7 +1058,10 @@ func (m *model) content(w int, now time.Time, interactive bool) (lines []string,
 	return lines, selStart, selEnd
 }
 
-func (m *model) frame(now time.Time) string {
+// frame renders the screen and returns the escape sequences that turn prev into it, rewriting
+// only rows that changed: a full redraw ~10×/s (spinners) is enough output to make slower
+// terminals such as VS Code's fall behind and block our writes, keys and Ctrl+C included.
+func (m *model) frame(now time.Time, prev []string) (string, []string) {
 	w, h := m.w, m.h
 	body := max(1, h-2)
 	lines, selStart, selEnd := m.content(w, now, true)
@@ -1072,19 +1075,31 @@ func (m *model) frame(now time.Time) string {
 		m.offset = selStart
 	}
 
-	var b strings.Builder
-	b.WriteString("\x1b[?2026h\x1b[H") // begin synchronized update, cursor home
-	b.WriteString(m.header(w, now, len(lines), body))
-	b.WriteString("\x1b[K\r\n")
+	rows := make([]string, 0, body+2)
+	rows = append(rows, m.header(w, now, len(lines), body))
 	for i := 0; i < body; i++ {
+		row := ""
 		if idx := m.offset + i; idx < len(lines) {
-			b.WriteString(lines[idx])
+			row = lines[idx]
 		}
-		b.WriteString("\x1b[K\r\n")
+		rows = append(rows, row)
 	}
-	b.WriteString(m.statusBar(w, now))
-	b.WriteString("\x1b[K\x1b[?2026l")
-	return b.String()
+	rows = append(rows, m.statusBar(w, now))
+
+	var b strings.Builder
+	for i, row := range rows {
+		if i < len(prev) && prev[i] == row {
+			continue
+		}
+		if b.Len() == 0 {
+			b.WriteString("\x1b[?2026h") // begin synchronized update
+		}
+		fmt.Fprintf(&b, "\x1b[%d;1H%s\x1b[K", i+1, row)
+	}
+	if b.Len() > 0 {
+		b.WriteString("\x1b[?2026l")
+	}
+	return b.String(), rows
 }
 
 func (m *model) header(w int, now time.Time, total, body int) string {
@@ -1238,7 +1253,7 @@ func run(m *model) int {
 	}
 	start(true)
 
-	last := ""
+	var drawn []string // rows currently on screen
 	for {
 		select {
 		case k := <-keys:
@@ -1291,12 +1306,12 @@ func run(m *model) int {
 			if w, h := termSize(); w != m.w || h != m.h {
 				m.w, m.h = w, h
 				os.Stdout.WriteString("\x1b[2J")
-				last = ""
+				drawn = nil
 			}
 		}
-		if f := m.frame(time.Now()); f != last {
+		var f string
+		if f, drawn = m.frame(time.Now(), drawn); f != "" {
 			os.Stdout.WriteString(f)
-			last = f
 		}
 	}
 }
