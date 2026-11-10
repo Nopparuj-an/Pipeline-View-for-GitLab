@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -46,6 +47,10 @@ type model struct {
 	flash       string
 	flashUntil  time.Time
 	w, h        int
+	tagUI       *tagUI
+	tagCancel   context.CancelFunc
+	tagEvents   chan tagEvent
+	tagSequence int
 }
 
 func (m *model) merge(r fetchResult) {

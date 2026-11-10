@@ -578,6 +578,9 @@ func (m *model) frame(now time.Time, prev []string) (string, []string) {
 		rows = append(rows, row)
 	}
 	rows = append(rows, m.statusBar(w, now))
+	if m.tagUI != nil && !m.tagUI.hidden {
+		rows = m.tagRows(w, h)
+	}
 
 	var b strings.Builder
 	for i, row := range rows {
@@ -629,7 +632,7 @@ func (m *model) statusBar(w int, now time.Time) string {
 			right += " (fast)"
 		}
 	}
-	hints := " ↑↓ select  ⏎ open  r refresh  f hide passed  s skipped  c compact  q quit"
+	hints := " ↑↓ select  ⏎ open  t tag  r refresh  f hide passed  s skipped  c compact  q quit"
 	l := newLine(w - 1) // never touch the last column of the last row
 	l.add(grey, truncate(hints, w-1-width(right)-2))
 	l.padTo(w - 1 - width(right))

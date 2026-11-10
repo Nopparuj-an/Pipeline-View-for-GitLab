@@ -84,6 +84,13 @@ func run(m *model) int {
 	for {
 		select {
 		case k := <-keys:
+			if m.tagUI != nil && !m.tagUI.hidden {
+				if k == "\x03" {
+					return 0
+				}
+				m.tagKey(k)
+				break
+			}
 			switch k {
 			case "q", "Q", "\x03":
 				return 0
@@ -110,7 +117,11 @@ func run(m *model) int {
 				m.hideSkipped = !m.hideSkipped
 			case "c":
 				m.compact = !m.compact
+			case "t":
+				m.openTagger()
 			}
+		case event := <-m.tagEvents:
+			m.handleTagEvent(event)
 		case r := <-results:
 			m.fetching, m.manual = false, false
 			m.merge(r)
