@@ -1,4 +1,4 @@
-package main
+package terminal
 
 import (
 	"fmt"
@@ -21,7 +21,7 @@ const (
 	enableVirtualTerminalProcessing = 0x0004
 )
 
-func termSize() (int, int) {
+func Size() (int, int) {
 	var info struct {
 		size, cursor             [2]int16
 		attrs                    uint16
@@ -45,7 +45,7 @@ func setConsoleMode(h syscall.Handle, mode uint32) error {
 
 // rawMode switches the console to unbuffered, no-echo input with VT sequences on both
 // sides (so arrow keys arrive as ESC [ A and our ANSI output renders) and returns a restore func.
-func rawMode() (func(), error) {
+func RawMode() (func(), error) {
 	in, out := syscall.Handle(os.Stdin.Fd()), syscall.Handle(os.Stdout.Fd())
 	var inMode, outMode uint32
 	if err := syscall.GetConsoleMode(in, &inMode); err != nil {

@@ -1,6 +1,6 @@
 //go:build !windows
 
-package main
+package terminal
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"unsafe"
 )
 
-func termSize() (int, int) {
+func Size() (int, int) {
 	var ws struct{ Row, Col, X, Y uint16 }
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, os.Stdout.Fd(), uintptr(syscall.TIOCGWINSZ), uintptr(unsafe.Pointer(&ws)))
 	if errno != 0 || ws.Col == 0 || ws.Row == 0 {
@@ -28,7 +28,7 @@ func stty(args ...string) (string, error) {
 }
 
 // rawMode switches the terminal to unbuffered, no-echo input and returns a restore func.
-func rawMode() (func(), error) {
+func RawMode() (func(), error) {
 	saved, err := stty("-g")
 	if err != nil {
 		return nil, fmt.Errorf("stty: %w", err)
