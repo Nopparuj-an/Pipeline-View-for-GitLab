@@ -72,6 +72,12 @@ export GITLAB_TOKEN=glpat-xxxxxxxx
 | `c` | Toggle compact layout |
 | `q` | Quit |
 
+### Mouse
+
+Scroll the dashboard with the mouse wheel without changing the selected project. Hover over a project or action to highlight it. Click a project to select it, or double-click it to open the tag menu. The visible status-bar actions and tag-menu choices can also be clicked. Keyboard navigation continues to work and scrolls the selection into view.
+
+Project, branch, pipeline, commit and job names remain terminal hyperlinks. Use your terminal's usual modifier-click to open them; the modifier and behavior depend on the terminal. When the terminal sends Ctrl- or Alt-clicks to the dashboard, it opens the clicked link itself.
+
 ### Tagging
 
 Select a project with a pipeline and press `t`. The menu shows the latest UAT and production versions; Auto is selected by default. Press Esc to leave at any time.

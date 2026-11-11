@@ -51,9 +51,9 @@ func run(m *model) int {
 		fmt.Fprintln(os.Stderr, "pipeline:", err)
 		return 1
 	}
-	os.Stdout.WriteString("\x1b[?1049h\x1b[?25l\x1b[2J") // alternate screen, hide cursor
+	os.Stdout.WriteString("\x1b[?1049h\x1b[?25l\x1b[2J\x1b[?1003h\x1b[?1006h") // alternate screen, mouse clicks, wheel and motion
 	defer func() {
-		os.Stdout.WriteString("\x1b[?25h\x1b[?1049l")
+		os.Stdout.WriteString("\x1b[?1006l\x1b[?1003l\x1b[?25h\x1b[?1049l")
 		restore()
 	}()
 
@@ -84,6 +84,14 @@ func run(m *model) int {
 	for {
 		select {
 		case k := <-keys:
+			if mouse, ok := terminal.ParseMouse(k); ok {
+				k = m.mouse(mouse, time.Now())
+				if k == "" {
+					break
+				}
+			} else {
+				m.lastClickAt = time.Time{}
+			}
 			if m.tagUI != nil && !m.tagUI.hidden {
 				if k == "\x03" {
 					return 0

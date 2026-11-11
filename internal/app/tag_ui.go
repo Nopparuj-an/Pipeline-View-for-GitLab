@@ -322,6 +322,12 @@ func (m *model) tagRows(w, h int) []string {
 		l.add(style, "  "+s)
 		lines = append(lines, l.String())
 	}
+	action := func(s, text, key string) {
+		if i := strings.Index(s, text); i >= 0 && 2+width(s[:i])+width(text) <= max(1, w-1) && len(lines) <= h {
+			left := 3 + width(s[:i])
+			m.clicks = append(m.clicks, clickTarget{y: len(lines), left: left, right: left + width(text) - 1, key: key})
+		}
+	}
 	add(bold, "Tag project: "+u.project.Name)
 	lines = append(lines, "")
 	if u.phase != "loading" {
@@ -342,8 +348,14 @@ func (m *model) tagRows(w, h int) []string {
 			} else {
 				add(grey, "  "+item)
 			}
+			if len(lines) <= h && w > 3 {
+				m.clicks = append(m.clicks, clickTarget{y: len(lines), left: 3, right: w - 1, key: fmt.Sprintf("menu:%d", i)})
+			}
 		}
-		add(grey, "↑/↓ select · Enter continue · Esc leave")
+		hint := "↑/↓ select · Enter continue · Esc leave"
+		add(grey, hint)
+		action(hint, "Enter continue", "\r")
+		action(hint, "Esc leave", "\x1b")
 	case "manual-kind":
 		add(bold, "Choose tag type:")
 		for i, item := range []string{"UAT", "Prod"} {
@@ -352,11 +364,22 @@ func (m *model) tagRows(w, h int) []string {
 			} else {
 				add(grey, "  "+item)
 			}
+			if len(lines) <= h && w > 3 {
+				m.clicks = append(m.clicks, clickTarget{y: len(lines), left: 3, right: w - 1, key: fmt.Sprintf("menu:%d", i)})
+			}
 		}
-		add(grey, "↑/↓ select · Enter continue · Esc leave")
+		hint := "↑/↓ select · Enter continue · Esc leave"
+		add(grey, hint)
+		action(hint, "Enter continue", "\r")
+		action(hint, "Esc leave", "\x1b")
 	case "manual-input":
 		add(bold, "Version for "+strings.ToUpper(u.manualKind)+": "+u.input+"_")
-		add(grey, "Backspace edit · Ctrl+U clear · Enter continue · Esc leave")
+		hint := "Backspace edit · Ctrl+U clear · Enter continue · Esc leave"
+		add(grey, hint)
+		action(hint, "Backspace edit", "\x7f")
+		action(hint, "Ctrl+U clear", "\x15")
+		action(hint, "Enter continue", "\r")
+		action(hint, "Esc leave", "\x1b")
 	case "confirm":
 		if u.plan.createUAT {
 			add(bold, "Create uat-"+u.plan.name+" from main commit:")
@@ -367,11 +390,20 @@ func (m *model) tagRows(w, h int) []string {
 		if u.plan.mode == "auto" && u.plan.createUAT {
 			add(grey, "Then promote to "+u.plan.name+" after the UAT pipeline succeeds.")
 		}
-		add(grey, "Enter/Y confirm · N back · Esc leave")
+		hint := "Enter/Y confirm · N back · Esc leave"
+		add(grey, hint)
+		action(hint, "Enter/Y confirm", "\r")
+		action(hint, "N back", "n")
+		action(hint, "Esc leave", "\x1b")
 	case "working":
-		add(grey, "B background · Esc stops waiting; created tags remain.")
+		hint := "B background · Esc stops waiting; created tags remain."
+		add(grey, hint)
+		action(hint, "B background", "b")
+		action(hint, "Esc stops waiting", "\x1b")
 	case "error", "done":
-		add(grey, "Enter/Esc leave")
+		hint := "Enter/Esc leave"
+		add(grey, hint)
+		action(hint, hint, "\r")
 	}
 	if u.message != "" {
 		lines = append(lines, "")

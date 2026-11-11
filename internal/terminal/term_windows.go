@@ -17,6 +17,8 @@ const (
 	enableProcessedInput            = 0x0001
 	enableLineInput                 = 0x0002
 	enableEchoInput                 = 0x0004
+	enableQuickEditMode             = 0x0040
+	enableExtendedFlags             = 0x0080
 	enableVirtualTerminalInput      = 0x0200
 	enableVirtualTerminalProcessing = 0x0004
 )
@@ -54,7 +56,7 @@ func RawMode() (func(), error) {
 	if err := syscall.GetConsoleMode(out, &outMode); err != nil {
 		return nil, fmt.Errorf("console: %w", err)
 	}
-	if err := setConsoleMode(in, inMode&^(enableLineInput|enableEchoInput|enableProcessedInput)|enableVirtualTerminalInput); err != nil {
+	if err := setConsoleMode(in, inMode&^(enableLineInput|enableEchoInput|enableProcessedInput|enableQuickEditMode)|enableVirtualTerminalInput|enableExtendedFlags); err != nil {
 		return nil, fmt.Errorf("console: %w", err)
 	}
 	if err := setConsoleMode(out, outMode|enableVirtualTerminalProcessing); err != nil {

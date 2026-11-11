@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -264,10 +265,13 @@ func commitLine(l *line, p Project, pl *Pipeline, jobs []Job) {
 
 // renderCard draws a project as a rounded box with the pipeline summary in its top border
 // and one small box per stage, coloured by the stage's status.
-func (m *model) renderCard(e *entry, selected bool, w int, now time.Time) []string {
+func (m *model) renderCard(e *entry, selected, hovered bool, w int, now time.Time) []string {
 	bc := grey
 	if selected {
 		bc = bold + cyan
+	}
+	if hovered {
+		bc = bold + yellow
 	}
 	iw := w - 4 // inside "│ " … " │"
 	var lines []string
@@ -400,11 +404,13 @@ func (m *model) renderCard(e *entry, selected bool, w int, now time.Time) []stri
 	return append(lines, b.String())
 }
 
-func (m *model) renderEntry(e *entry, selected bool, w int, now time.Time) []string {
+func (m *model) renderEntry(e *entry, selected, hovered bool, w int, now time.Time) []string {
 	var lines []string
 	start := func() *line {
 		l := newLine(w)
-		if selected {
+		if hovered {
+			l.add(yellow, "▌ ")
+		} else if selected {
 			l.add(cyan, "▌ ")
 		} else {
 			l.add("", "  ")
@@ -510,6 +516,9 @@ func (m *model) renderEntry(e *entry, selected bool, w int, now time.Time) []str
 
 // content renders the project list; selStart/selEnd bound the selected block (end exclusive).
 func (m *model) content(w int, now time.Time, interactive bool) (lines []string, selStart, selEnd int) {
+	if interactive {
+		m.itemRows = nil
+	}
 	if !m.loaded {
 		msg := grey + "  loading…" + reset
 		if m.lastErr != "" {
@@ -534,13 +543,17 @@ func (m *model) content(w int, now time.Time, interactive bool) (lines []string,
 		if sel {
 			selStart = len(lines)
 		}
+		start := len(lines)
 		if m.compact {
-			lines = append(lines, m.renderEntry(e, sel, w, now)...)
+			lines = append(lines, m.renderEntry(e, sel, false, w, now)...)
 		} else {
-			lines = append(lines, m.renderCard(e, sel, w-1, now)...)
+			lines = append(lines, m.renderCard(e, sel, false, w-1, now)...)
 		}
 		if sel {
 			selEnd = len(lines)
+		}
+		if interactive {
+			m.itemRows = append(m.itemRows, itemRow{start: start, end: len(lines), id: e.project.ID})
 		}
 	}
 	if len(empty) > 0 {
@@ -556,18 +569,22 @@ func (m *model) content(w int, now time.Time, interactive bool) (lines []string,
 // terminals such as VS Code's fall behind and block our writes, keys and Ctrl+C included.
 func (m *model) frame(now time.Time, prev []string) (string, []string) {
 	w, h := m.w, m.h
-	body := max(1, h-2)
+	body := max(0, h-2)
 	lines, selStart, selEnd := m.content(w, now, true)
+	m.totalLines = len(lines)
 
 	// Scroll so the selected block is visible (its top wins if it is taller than the screen).
 	m.offset = min(m.offset, max(0, len(lines)-body))
-	if selEnd > m.offset+body {
-		m.offset = selEnd - body
-	}
-	if selStart < m.offset {
-		m.offset = selStart
+	if !m.freeScroll {
+		if selEnd > m.offset+body {
+			m.offset = selEnd - body
+		}
+		if selStart < m.offset {
+			m.offset = selStart
+		}
 	}
 
+	m.clicks = nil
 	rows := make([]string, 0, body+2)
 	rows = append(rows, m.header(w, now, len(lines), body))
 	for i := 0; i < body; i++ {
@@ -579,8 +596,38 @@ func (m *model) frame(now time.Time, prev []string) (string, []string) {
 	}
 	rows = append(rows, m.statusBar(w, now))
 	if m.tagUI != nil && !m.tagUI.hidden {
+		m.clicks = nil
 		rows = m.tagRows(w, h)
 	}
+	if m.mouseX >= 1 && m.mouseX <= w && m.mouseY >= 1 && m.mouseY <= len(rows) {
+		if m.tagUI == nil || m.tagUI.hidden {
+			if m.mouseX < w && m.mouseY >= 2 && m.mouseY < h {
+				row := m.offset + m.mouseY - 2
+				for _, item := range m.itemRows {
+					if row >= item.start && row < item.end {
+						e := m.entries[item.id]
+						var hovered []string
+						if m.compact {
+							hovered = m.renderEntry(e, item.id == m.selected, true, w, now)
+						} else {
+							hovered = m.renderCard(e, item.id == m.selected, true, w-1, now)
+						}
+						for i := max(0, item.start-m.offset); i < min(body, item.end-m.offset); i++ {
+							rows[i+1] = hovered[m.offset+i-item.start]
+						}
+						break
+					}
+				}
+			}
+		}
+		for _, target := range m.clicks {
+			if m.mouseY == target.y && m.mouseX >= target.left && m.mouseX <= target.right {
+				rows[target.y-1] = hoverRow(rows[target.y-1], target.left, target.right)
+				break
+			}
+		}
+	}
+	m.screenRows = rows
 
 	var b strings.Builder
 	for i, row := range rows {
@@ -596,6 +643,75 @@ func (m *model) frame(now time.Time, prev []string) (string, []string) {
 		b.WriteString("\x1b[?2026l")
 	}
 	return b.String(), rows
+}
+
+// hoverRow adds a background to visible columns without disturbing text colours or OSC 8 links.
+func hoverRow(row string, left, right int) string {
+	const background = "\x1b[48;5;236m"
+	var b strings.Builder
+	col, active := 1, false
+	for len(row) > 0 {
+		if strings.HasPrefix(row, "\x1b[") {
+			i := 2
+			for i < len(row) && (row[i] < 0x40 || row[i] > 0x7e) {
+				i++
+			}
+			if i == len(row) {
+				break
+			}
+			seq := row[:i+1]
+			b.WriteString(seq)
+			if active && seq == reset {
+				b.WriteString(background)
+			}
+			row = row[i+1:]
+			continue
+		}
+		if strings.HasPrefix(row, "\x1b]8;;") {
+			i := strings.Index(row[5:], "\x1b\\")
+			if i < 0 {
+				break
+			}
+			i += 7
+			b.WriteString(row[:i])
+			row = row[i:]
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(row)
+		rw := runeWidth(r)
+		if rw > 0 {
+			within := col <= right && col+rw-1 >= left
+			if within != active {
+				if within {
+					b.WriteString(background)
+				} else {
+					b.WriteString("\x1b[49m")
+				}
+				active = within
+			}
+			col += rw
+		}
+		b.WriteString(row[:size])
+		row = row[size:]
+	}
+	if col <= right {
+		if !active && col < left {
+			padding := min(right+1, left) - col
+			b.WriteString(strings.Repeat(" ", padding))
+			col += padding
+		}
+		if col <= right {
+			if !active {
+				b.WriteString(background)
+			}
+			b.WriteString(strings.Repeat(" ", right-col+1))
+			active = true
+		}
+	}
+	if active {
+		b.WriteString("\x1b[49m")
+	}
+	return b.String()
 }
 
 func (m *model) header(w int, now time.Time, total, body int) string {
@@ -634,7 +750,16 @@ func (m *model) statusBar(w int, now time.Time) string {
 	}
 	hints := " ↑↓ select  ⏎ open  t tag  r refresh  f hide passed  s skipped  c compact  q quit"
 	l := newLine(w - 1) // never touch the last column of the last row
-	l.add(grey, truncate(hints, w-1-width(right)-2))
+	visibleHints := truncate(hints, w-1-width(right)-2)
+	l.add(grey, visibleHints)
+	for _, action := range []struct{ text, key string }{
+		{"↑↓ select", "down"}, {"⏎ open", "o"}, {"t tag", "t"}, {"r refresh", "r"},
+		{"f hide passed", "f"}, {"s skipped", "s"}, {"c compact", "c"}, {"q quit", "q"},
+	} {
+		if i := strings.Index(visibleHints, action.text); i >= 0 {
+			m.clicks = append(m.clicks, clickTarget{y: m.h, left: width(visibleHints[:i]) + 1, right: width(visibleHints[:i]) + width(action.text), key: action.key})
+		}
+	}
 	l.padTo(w - 1 - width(right))
 	l.add(rc, right)
 	return l.String()

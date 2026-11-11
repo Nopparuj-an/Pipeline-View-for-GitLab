@@ -41,6 +41,15 @@ type model struct {
 
 	selected    int // project ID
 	offset      int
+	freeScroll  bool // wheel scrolling does not force the selection into view
+	itemRows    []itemRow
+	clicks      []clickTarget
+	screenRows  []string
+	mouseX      int
+	mouseY      int
+	totalLines  int
+	lastClickID int
+	lastClickAt time.Time
 	hidePassed  bool
 	compact     bool
 	hideSkipped bool
@@ -171,6 +180,8 @@ func (m *model) visible() (shown []*entry, empty []string) {
 }
 
 func (m *model) move(delta int) {
+	m.freeScroll = false
+	m.lastClickAt = time.Time{}
 	shown, _ := m.visible()
 	if len(shown) == 0 {
 		return
@@ -206,6 +217,10 @@ func (m *model) open() {
 	if e.pipeline != nil {
 		target = e.pipeline.WebURL
 	}
+	m.openURL(target, e.project.Name)
+}
+
+func (m *model) openURL(target, name string) {
 	cmd := exec.Command("xdg-open", target)
 	switch runtime.GOOS {
 	case "darwin":
@@ -218,5 +233,5 @@ func (m *model) open() {
 		return
 	}
 	go cmd.Wait()
-	m.setFlash("opened " + e.project.Name)
+	m.setFlash("opened " + name)
 }
